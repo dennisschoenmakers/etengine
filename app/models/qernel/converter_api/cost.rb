@@ -5,7 +5,7 @@
   # to a number of different units.
   #
 
-class Qernel::ConverterApi
+module Qernel ; class ConverterApi
 
   ##################
   # Input Capacity #
@@ -109,8 +109,9 @@ class Qernel::ConverterApi
   #
   def fixed_costs
     fetch(:fixed_costs) do
-      cost_of_capital + depreciation_costs +
-        fixed_operation_and_maintenance_costs_per_year
+      (cost_of_capital || 0.0) +
+        (depreciation_costs || 0.0) +
+        (fixed_operation_and_maintenance_costs_per_year || 0.0)
     end
   end
   unit_for_calculation "fixed_costs", 'euro / plant / year'
@@ -128,6 +129,9 @@ class Qernel::ConverterApi
   #
   def cost_of_capital
     fetch(:cost_of_capital) do
+      fail IllegalZeroError.new(:technical_lifetime) if technical_lifetime == 0
+      fail IllegalZeroError.new(:construction_time)  if construction_time  == 0
+
       average_investment * wacc *
         (construction_time + technical_lifetime) /
           technical_lifetime
@@ -145,7 +149,17 @@ class Qernel::ConverterApi
   #
   def depreciation_costs
     fetch(:depreciation_costs) do
-      total_investment_over_lifetime / technical_lifetime
+      if technical_lifetime == 0
+        fail IllegalZeroError.new(:technical_lifetime)
+      end
+
+      investment = total_investment_over_lifetime
+
+      if investment && investment <= 0
+        fail IllegalNegativeError.new(:total_investment_over_lifetime, investment)
+      end
+
+      investment / technical_lifetime
     end
   end
   unit_for_calculation "depreciation_costs", 'euro / plant / year'
@@ -209,7 +223,13 @@ class Qernel::ConverterApi
   # @return [Float] the yearly fuel costs for one single plant
   #
   def fuel_costs
-    fetch(:fuel_costs) {typical_input * weighted_carrier_cost_per_mj }
+    fetch(:fuel_costs) do
+      if typical_input && typical_input < 0
+        raise IllegalNegativeError.new(:typical_input, typical_input)
+      end
+
+      typical_input * weighted_carrier_cost_per_mj
+    end
   end
   unit_for_calculation "fuel_costs", 'euro / plant / year'
 
@@ -239,7 +259,8 @@ class Qernel::ConverterApi
   def co2_emissions_costs_per_typical_input
     fetch(:co2_emissions_costs_per_typical_input) do
       weighted_carrier_co2_per_mj * area.co2_price *
-      (1 - area.co2_percentage_free) * takes_part_in_ets * ((1 - free_co2_factor)) 
+      (1 - area.co2_percentage_free) *
+      takes_part_in_ets * ((1 - free_co2_factor))
     end
   end
   unit_for_calculation "co2_emissions_costs_per_typical_input", 'euro / MJ'
@@ -382,4 +403,4 @@ class Qernel::ConverterApi
     fetch(:typical_input) { input_capacity * full_load_seconds }
   end
   unit_for_calculation "typical_input", 'MJ / year'
-end
+end ; end
